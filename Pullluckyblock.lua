@@ -20,7 +20,7 @@ local UpgradeCarryRemote = Remotes:WaitForChild("Upgrade Carry Limit")
 
 -- [Mini Button khi minimize]
 local miniGui = Instance.new("ScreenGui")
-miniGui.Name = "Minichiew"
+miniGui.Name = "MiniHub"
 miniGui.ResetOnSpawn = false
 miniGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 miniGui.Parent = game.CoreGui
@@ -36,7 +36,6 @@ miniFrame.Visible = false
 miniFrame.Parent = miniGui
 
 Instance.new("UICorner", miniFrame).CornerRadius = UDim.new(0, 8)
-
 local miniStroke = Instance.new("UIStroke", miniFrame)
 miniStroke.Color = Color3.fromRGB(80, 80, 200)
 miniStroke.Thickness = 1.5
@@ -48,6 +47,30 @@ miniBtn.Text = "▶  PLB Script"
 miniBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 miniBtn.TextSize = 13
 miniBtn.Font = Enum.Font.GothamBold
+
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        for _, gui in ipairs(game.CoreGui:GetChildren()) do
+            local main = gui:FindFirstChild("Main")
+            if main and main:IsA("Frame") then
+                miniFrame.Visible = not main.Visible
+                break
+            end
+        end
+    end
+end)
+
+miniBtn.MouseButton1Click:Connect(function()
+    for _, gui in ipairs(game.CoreGui:GetChildren()) do
+        local main = gui:FindFirstChild("Main")
+        if main and main:IsA("Frame") then
+            main.Visible = true
+            miniFrame.Visible = false
+            break
+        end
+    end
+end)
 
 -- [Base finder]
 local function getPlayerBase()
@@ -75,51 +98,11 @@ local Window = Fluent:CreateWindow({
     MinimizeKey = Enum.KeyCode.LeftControl
 })
 
--- [Bắt sự kiện minimize của Fluent]
-local fluentGui = nil
-for _, gui in ipairs(game.CoreGui:GetChildren()) do
-    if gui.Name == "Fluent" or gui:FindFirstChild("Main") then
-        fluentGui = gui
-        break
-    end
-end
--- Theo dõi visibility của Fluent window để hiện/ẩn miniFrame
-task.spawn(function()
-    while true do
-        task.wait(0.2)
-        local found = false
-        for _, gui in ipairs(game.CoreGui:GetChildren()) do
-            local main = gui:FindFirstChild("Main")
-            if main and main:IsA("Frame") then
-                if not main.Visible then
-                    miniFrame.Visible = true
-                else
-                    miniFrame.Visible = false
-                end
-                found = true
-                break
-            end
-        end
-    end
-end)
-
-miniBtn.MouseButton1Click:Connect(function()
-    -- Mở lại window Fluent
-    for _, gui in ipairs(game.CoreGui:GetChildren()) do
-        local main = gui:FindFirstChild("Main")
-        if main and main:IsA("Frame") then
-            main.Visible = true
-            miniFrame.Visible = false
-            break
-        end
-    end
-end)
-
 local Tabs = {
-    Main     = Window:AddTab({ Title = "Main",    Icon = "box"   }),
-    Farm     = Window:AddTab({ Title = "Farm",    Icon = "bot"   }),
-    Upgrade  = Window:AddTab({ Title = "Upgrade", Icon = "wrench"}),
-    Settings = Window:AddTab({ Title = "Settings",Icon = "cog"   })
+    Main     = Window:AddTab({ Title = "Main",    Icon = "box"    }),
+    Farm     = Window:AddTab({ Title = "Farm",    Icon = "bot"    }),
+    Upgrade  = Window:AddTab({ Title = "Upgrade", Icon = "wrench" }),
+    Settings = Window:AddTab({ Title = "Settings",Icon = "cog"    })
 }
 
 local Options = Fluent.Options
@@ -186,7 +169,6 @@ end)
 Options.AutoRebirth:SetValue(false)
 
 ----- AUTO COLLECT CASH -----
--- FIX: collectIndex là upvalue, không reset mỗi tick
 local collectIndex = 1
 local ToggleCollect = Tabs.Main:AddToggle("AutoCollect", {Title = "Auto Collect Cash", Default = false})
 ToggleCollect:OnChanged(function()
@@ -219,6 +201,93 @@ ToggleCollect:OnChanged(function()
 end)
 Options.AutoCollect:SetValue(false)
 
+----- SPEED -----
+local SpeedInput = Tabs.Main:AddInput("SpeedValue", {
+    Title = "Speed Value",
+    Default = "50",
+    Placeholder = "Nhập speed...",
+    Numeric = true,
+    Finished = false,
+})
+local ToggleSpeed = Tabs.Main:AddToggle("AutoSpeed", {Title = "Speed Hack", Default = false})
+local speedConnection
+ToggleSpeed:OnChanged(function()
+    if Options.AutoSpeed.Value then
+        speedConnection = RunService.Heartbeat:Connect(function()
+            local char = LocalPlayer.Character
+            if not char then return end
+            local humanoid = char:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.WalkSpeed = tonumber(SpeedInput.Value) or 50
+            end
+        end)
+    else
+        if speedConnection then speedConnection:Disconnect() speedConnection = nil end
+        local char = LocalPlayer.Character
+        if char then
+            local humanoid = char:FindFirstChildOfClass("Humanoid")
+            if humanoid then humanoid.WalkSpeed = 16 end
+        end
+    end
+end)
+Options.AutoSpeed:SetValue(false)
+
+----- ANTI KNOCKBACK -----
+local ToggleAntiKnock = Tabs.Main:AddToggle("AntiKnockback", {Title = "Anti Knockback (Boss)", Default = false})
+local antiKnockConnection
+local savedCFrame = nil
+ToggleAntiKnock:OnChanged(function()
+    if Options.AntiKnockback.Value then
+        antiKnockConnection = RunService.Heartbeat:Connect(function()
+            local char = LocalPlayer.Character
+            if not char then return end
+            local root = char:FindFirstChild("HumanoidRootPart")
+            local humanoid = char:FindFirstChildOfClass("Humanoid")
+            if not root or not humanoid then return end
+
+            -- Lưu vị trí khi đứng yên
+            if humanoid.MoveDirection == Vector3.new(0, 0, 0) then
+                savedCFrame = root.CFrame
+            end
+
+            -- Reset ragdoll
+            local ragdolled = char:FindFirstChild("Ragdolled")
+            if ragdolled and ragdolled:IsA("BoolValue") and ragdolled.Value == true then
+                ragdolled.Value = false
+            end
+
+            -- Xóa constraint boss tạo
+            for _, v in ipairs(char:GetDescendants()) do
+                if v:IsA("RopeConstraint") or v:IsA("BallSocketConstraint") then
+                    pcall(function() v:Destroy() end)
+                end
+            end
+
+            -- Reset humanoid state nếu bị ragdoll
+            if humanoid:GetState() == Enum.HumanoidStateType.Ragdoll or
+               humanoid:GetState() == Enum.HumanoidStateType.FallingDown then
+                humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+                if savedCFrame then
+                    pcall(function() char:PivotTo(savedCFrame) end)
+                end
+            end
+
+            -- Nếu velocity quá lớn (bị đẩy) thì reset
+            if root:IsA("BasePart") and root.AssemblyLinearVelocity.Magnitude > 50 then
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                if savedCFrame then
+                    pcall(function() char:PivotTo(savedCFrame) end)
+                end
+            end
+        end)
+    else
+        if antiKnockConnection then antiKnockConnection:Disconnect() antiKnockConnection = nil end
+        savedCFrame = nil
+    end
+end)
+Options.AntiKnockback:SetValue(false)
+
 ----- AUTO UPGRADE -----
 local Input = Tabs.Upgrade:AddInput("UpgradeLevel", {
     Title = "Max Upgrade Level",
@@ -228,12 +297,10 @@ local Input = Tabs.Upgrade:AddInput("UpgradeLevel", {
     Finished = false,
     Callback = function(Value) print("Target level:", Value) end
 })
-
 local ToggleUpgrade = Tabs.Upgrade:AddToggle("AutoUpgrade", {Title = "Auto Upgrade Brainrots", Default = false})
 ToggleUpgrade:OnChanged(function()
     if Options.AutoUpgrade.Value then
         local last = 0
-        -- FIX: pendingUpgrade là upvalue persist giữa các tick
         local pendingUpgrade = {}
         connections.upgrade = RunService.Heartbeat:Connect(function()
             if tick() - last >= 0.1 then
@@ -343,7 +410,6 @@ local function isBeingStolen(model)
     return stealing ~= nil and stealing:IsA("RopeConstraint")
 end
 
--- FIX: trim whitespace tránh mismatch rarity
 local function getRarityText(model)
     local text = nil
     pcall(function()
@@ -389,9 +455,7 @@ local function attemptSteal(model, rootPart, prompt)
     return "skip"
 end
 
--- FIX: tìm folder chứa lucky blocks với nhiều path
 local function getFriendsFolder()
-    local folder = nil
     local paths = {
         function() return workspace.Live.Friends end,
         function() return workspace.Friends end,
@@ -406,7 +470,6 @@ local function getFriendsFolder()
         local ok, result = pcall(p)
         if ok and result then return result end
     end
-    -- Quét toàn bộ workspace nếu không tìm thấy
     for _, child in ipairs(workspace:GetChildren()) do
         if child:IsA("Folder") or child:IsA("Model") then
             for _, sub in ipairs(child:GetChildren()) do
@@ -415,9 +478,7 @@ local function getFriendsFolder()
                     sub.Name:lower():find("block") or
                     sub.Name:lower():find("lucky") or
                     sub.Name:lower():find("item")
-                ) then
-                    return sub
-                end
+                ) then return sub end
             end
         end
     end
@@ -454,28 +515,22 @@ ToggleSteal:OnChanged(function()
                     if not ok then break end
                     continue
                 end
-
                 local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
                 local strengthStat = leaderstats and leaderstats:FindFirstChild("Strength")
                 if not strengthStat then task.wait(1) continue end
-
                 local strength = parseStrength(strengthStat.Value)
                 pcall(function()
                     StrengthLabel:SetDesc("Strength: " .. tostring(strengthStat.Value) .. " (" .. strength .. ")")
                 end)
-
                 local eligibleRarities = {}
                 for _, tier in ipairs(rarityThresholds) do
                     if strength >= tier.value and not excludedRarities[tier.name] then
                         eligibleRarities[tier.name] = true
                     end
                 end
-
                 if not next(eligibleRarities) then task.wait(1) continue end
-
                 local friendsFolder = getFriendsFolder()
                 if not friendsFolder then task.wait(1) continue end
-
                 local candidates = {}
                 for _, model in ipairs(friendsFolder:GetChildren()) do
                     if not model:IsA("Model") then continue end
@@ -483,7 +538,6 @@ ToggleSteal:OnChanged(function()
                     if not rarity or rarity == "" then continue end
                     if not eligibleRarities[rarity] then continue end
                     if isBeingStolen(model) then continue end
-                    -- FIX: tìm rootPart và prompt linh hoạt hơn
                     local rootPart = model:FindFirstChild("RootPart")
                         or model.PrimaryPart
                         or model:FindFirstChildWhichIsA("BasePart")
@@ -498,9 +552,7 @@ ToggleSteal:OnChanged(function()
                         rank   = rarityRank[rarity] or 999,
                     })
                 end
-
                 if #candidates == 0 then task.wait(1) continue end
-
                 local bestRank = math.huge
                 for _, c in ipairs(candidates) do
                     if c.rank < bestRank then bestRank = c.rank end
@@ -509,13 +561,11 @@ ToggleSteal:OnChanged(function()
                 for _, c in ipairs(candidates) do
                     if c.rank == bestRank then table.insert(targets, c) end
                 end
-
                 local ragdolledMidLoop = false
                 for _, target in ipairs(targets) do
                     if not stealRunning then break end
                     if not target.model or not target.model.Parent then continue end
                     if isBeingStolen(target.model) then continue end
-
                     local result = attemptSteal(target.model, target.root, target.prompt)
                     if result == "ragdoll" then
                         local ok = waitForRagdollEnd()
@@ -523,7 +573,6 @@ ToggleSteal:OnChanged(function()
                         if not ok then stealRunning = false end
                         break
                     end
-
                     if stealRunning and target.model and target.model.Parent then
                         local HOME = CFrame.new(287, 11, 304)
                         local giveUp = tick() + 5
@@ -541,7 +590,6 @@ ToggleSteal:OnChanged(function()
                     end
                     task.wait(0.5)
                 end
-
                 if stealRunning and not ragdolledMidLoop then
                     task.wait(0.5)
                 end
